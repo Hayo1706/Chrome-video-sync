@@ -1,0 +1,51 @@
+<!-- popup.html -->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      width: 350px;
+      height: 140px;
+    }
+
+    input{
+      margin: 2px;
+      width: 120px;
+    }
+
+    tr {
+      border-bottom: 1px black;
+    }
+  </style>
+</head>
+
+<body>
+  <table>
+    <tr>
+      <td><label>Start syncing:</label></td>
+      <td><input type="checkbox" id="checkBox"></button></td>
+      <td></td>
+    </tr>
+    
+    <tr>
+      <td><label>Insert ID of friend:</label></td>
+      <td><input type="text" id="submitIdInput"></td>
+      <td><button id="submitButton">Submit</button></td>
+
+    </tr>
+
+    
+    <tr>
+      <td><label>Or send your ID:</label></td>
+      <td><input type="text" id="copyInput" disabled ></td>
+      <td><button id="copyButton">Copy text</button></td>
+    </tr>
+
+    <script src="popup.js"></script>
+    <script src="peerjs.min.js"></script>
+  </table>
+</body>
+
+</html>
