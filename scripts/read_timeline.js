@@ -1,34 +1,31 @@
-let intervalId;
 var connection;
 
 var host = false;
+
 var video;
+var forward;
+var back;
 
 const MAX_DIFFERENCE = 0.2;
 
 var peer = new Peer();
 var peerId = 'Error retrieving ID';
-var disableClick = false;
-const intervalTime = 2000;
+
+var disableSeekEvent = false;
+var disablePlayEvent = false;
+
 
 //Getting new peer id
 peer.on('open', function(id) {
     peerId = id;
 });
 
-
 //When other peer connects with my peer id
 peer.on('connection', function(conn) {
     connection = conn
     host = true;
-
     onNewConnection();
-    
     console.log('recieved connection ID');
-    
-
-    //checkTimeline();
-    
 });
 
 
@@ -39,6 +36,8 @@ function connectToId(id){
 
 function onNewConnection(){
     video = document.getElementsByTagName("video")[0];
+    forward = document.getElementsByClassName("ff-10sec-icon")[0];
+    back = document.getElementsByClassName("rwd-10sec-icon")[0];
 
     connection.on('open', function() {
         // Receive messages
@@ -47,15 +46,15 @@ function onNewConnection(){
             const recievedMessage = JSON.parse(data);
             switch (recievedMessage.command) {
                 case 'sync':
-                    console.log('Received', recievedMessage.value, 'current time:', video.currentTime);
-                    if (Math.abs(video.currentTime - parseFloat(recievedMessage.value) ) > MAX_DIFFERENCE)
-                        syncVideo(parseFloat(recievedMessage.value));
+                    handleSync(recievedMessage);
                     break;
                 case 'pause':
                     if(recievedMessage.value === "paused")
                     	video.pause();
-                    else
+                    else {
+                        disablePlayEvent = true;
                         video.play();
+                    }
                     break;
                 default:
                     console.log('Unknown message')
@@ -63,66 +62,38 @@ function onNewConnection(){
         });
         if(host){
             console.log('Syncing');
-            checkTimeline();
+            sendCurrentTime();
         }
     });
 
-    video.addEventListener("seeked", (event1) => {
-        if (!disableClick)
-            checkTimeline();
+    video.addEventListener("seeked", handleSeekedEvent);
 
-    });
     video.addEventListener("pause", (event2) => {
-        if (checkHuman(event2)){
-            connection.send(JSON.stringify({'command':'pause','value': 'paused'}))
-            stopSyncingLoop();
-        }
+        connection.send(JSON.stringify({'command':'pause','value': 'paused'}))
     });
     video.addEventListener("play", (event3) => {
-        if (checkHuman(event3)){
+        if (!disablePlayEvent){
             connection.send(JSON.stringify({'command':'pause','value': 'unpaused'}))
-            if(host)
-                startSyncingLoop();
-
+            sendCurrentTime();
+        }
+        else {
+            disablePlayEvent = false;
         }
     });
 }
 
-const checkTimeline = () => {
+function handleSeekedEvent(){
+    sendCurrentTime();
+}
+
+const sendCurrentTime = () => {
     connection.send(JSON.stringify({'command':'sync','value': video.currentTime}))
     console.log(video.currentTime);
 };
 
-function startSyncingLoop() {
-    if (connection == null){
-        console.log("Can't start sync, not connected yet!")
-        return false
-    }
-    checkTimeline()
-    //intervalId = setInterval(checkTimeline, intervalTime);
-    return true
-};
-
-function stopSyncingLoop() {
-    clearInterval(intervalId);
-};
-
-
-function checkHuman(event){
-    return event.isTrusted;
-}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.listener) {
-        console.log('got request1')
-        sendResponse({succes: startSyncingLoop()});
-    } 
-    else if (request.stopListener) {
-        console.log('got request2')
-        stopSyncingLoop();
-        sendResponse();
-    }
-    else if (request.getPeerId) {
+    if (request.getPeerId) {
         console.log('got request3')
         sendResponse({peerId:peerId});
     }
@@ -138,39 +109,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.log('Unrecognized Message')
 });
 
+function handleSync(recievedMessage) {
+    function calculateClicks(difference) {
+        let clicks = Math.floor(Math.abs(difference) / 10);
+        return difference >= 0 ? clicks: clicks + 1;
+    }
 
-function syncVideo(aim){
-    let forward = document.getElementsByClassName("ff-10sec-icon")[0];
-    let back = document.getElementsByClassName("rwd-10sec-icon")[0];
-
-    let difference = aim - video.currentTime;
-    let clicks = Math.floor(Math.abs(difference) / 10);
-    console.log('Clicks:', clicks);
-    disableClick = true;
-
-    if (difference >= 0) {
+    function seekVideo(difference, clicks) {
+        const clickFunction = difference >= 0 ? () => {forward.click();} : () => {back.click();}
         for (let i = 0; i < clicks; i++) {
-            disableClick = true;
-            forward.click();
-        }
-        
-    }
-    else {
-        for (let i = 0; i <= clicks; i++) {
-            disableClick = true;
-            back.click();
+            clickFunction();
         }
     }
-    setTimeout(() => {
-        console.log('Current time:',video.currentTime, 'Current aim:', aim);
-        video.currentTime = aim + 0.4;
-        console.log('Time after:',video.currentTime);
-        
-    }, 400);
 
-    setTimeout(() => {
-        disableClick = false;
-    }, 1500);
+    function syncVideo(){
+        setTimeout(() => {
+            let seekDuration = performance.now() - startTimeSeek;
+            let newTime = Math.round((aim + (seekDuration / 1000)) * 100) / 100;
+
+            console.log('Supposed time:',newTime);
+            video.currentTime = newTime;
+            console.log('Actual time:', video.currentTime);
+
+
+            setTimeout(() => {
+                video.addEventListener('seeked', handleSeekedEvent);
+            }, 50);
+        }, 100);
+    }
+
+    let startTimeSeek = performance.now();
+    let aim = parseFloat(recievedMessage.value)
+    let difference = aim - video.currentTime;
+
+    console.log('Received', aim);
+
+    if (Math.abs(video.currentTime - aim ) > MAX_DIFFERENCE) {
+        console.log('big difference')
+        video.removeEventListener('seeked', handleSeekedEvent);
+        let clicks = calculateClicks(difference)
+        if (clicks > 0) {
+            video.addEventListener('seeked', syncVideo, {once: true});
+            seekVideo(difference,clicks)
+        }
+        else
+            syncVideo();
+
+    }
+
 }
 
 
