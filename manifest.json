@@ -20,7 +20,7 @@
         "run_at": "document_end",
         "js": ["scripts/peer.js","scripts/read_timeline.js"],
         "matches": [
-          "https://www.disneyplus.com/*/video/*"
+          "https://www.disneyplus.com/*"
         ]
       }
     ]

@@ -71,26 +71,36 @@ function onNewConnection(){
     video.addEventListener("pause", (event2) => {
         connection.send(JSON.stringify({'command':'pause','value': 'paused'}))
     });
-    video.addEventListener("play", (event3) => {
-        if (!disablePlayEvent){
-            connection.send(JSON.stringify({'command':'pause','value': 'unpaused'}))
-            sendCurrentTime();
-        }
-        else {
-            disablePlayEvent = false;
-        }
-    });
+    video.addEventListener("play", handlePlayEvent);
 }
-
-function handleSeekedEvent(){
-    sendCurrentTime();
-}
-
 const sendCurrentTime = () => {
     connection.send(JSON.stringify({'command':'sync','value': video.currentTime}))
     console.log(video.currentTime);
 };
 
+const sendUnpauseEvent = () => {
+    console.log('unpauseeeee')
+    if (!disablePlayEvent){
+        connection.send(JSON.stringify({'command':'pause','value': 'unpaused'}))
+        sendCurrentTime();
+    }
+    else {
+        disablePlayEvent = false;
+    }
+}
+
+let doSeekAction = sendCurrentTime;
+let doPlayAction = sendUnpauseEvent;
+function handleSeekedEvent(){
+    doSeekAction();
+    if (video.paused)
+        disablePlayEvent = true;
+    video.play();
+}
+
+function handlePlayEvent(){
+    doPlayAction();
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.getPeerId) {
@@ -124,18 +134,20 @@ function handleSync(recievedMessage) {
 
     function syncVideo(){
         setTimeout(() => {
-            let seekDuration = performance.now() - startTimeSeek;
+            doSeekAction = () => {};
+            let seekDuration = video.paused ? 0: performance.now() - startTimeSeek;
             let newTime = Math.round((aim + (seekDuration / 1000)) * 100) / 100;
 
             console.log('Supposed time:',newTime);
             video.currentTime = newTime;
             console.log('Actual time:', video.currentTime);
 
-
             setTimeout(() => {
-                video.addEventListener('seeked', handleSeekedEvent);
-            }, 50);
-        }, 100);
+                doSeekAction = sendCurrentTime;
+                disablePlayEvent = false;
+            }, 100);
+
+        }, 400);
     }
 
     let startTimeSeek = performance.now();
@@ -145,18 +157,21 @@ function handleSync(recievedMessage) {
     console.log('Received', aim);
 
     if (Math.abs(video.currentTime - aim ) > MAX_DIFFERENCE) {
+        doSeekAction = () => {};
+
+        disablePlayEvent = true;
         console.log('big difference')
-        video.removeEventListener('seeked', handleSeekedEvent);
+
         let clicks = calculateClicks(difference)
+
         if (clicks > 0) {
-            video.addEventListener('seeked', syncVideo, {once: true});
-            seekVideo(difference,clicks)
+            doSeekAction = syncVideo;
+            seekVideo(difference,clicks);
         }
-        else
+        else {
             syncVideo();
-
+        }
     }
-
 }
 
 
